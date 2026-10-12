@@ -4,6 +4,8 @@
 
 DBC Flow indexes every DBC transaction on Solana mainnet, decodes the program's `emit_cpi` events, enriches them and serves them as plug-and-play streams for launchpads, trading terminals, bots and AI agents.
 
+**🔴 Live: https://dbc-flow.vercel.app** · API docs: https://dbc-flow.vercel.app/docs
+
 > Built for the Superteam Earn bounty *“Best use of Meteora's Dynamic Bonding Curve”*, track **Data Streams or Developer Tooling for trading terminals and builders**.
 
 - **Live dashboard**: graduation radar, live tape, lifecycle feed, launchpad leaderboard, most active wallets, per-pool drawer with a **Curve Explorer**.
@@ -109,7 +111,11 @@ Full docs: `/docs` on any running instance.
 
 ## Deploy
 
-The repo includes a `Dockerfile` and `render.yaml`. It needs a long-running process (SSE/WS), so use Render, Railway or Fly, not serverless.
+- **Vercel**, which hosts the live demo: `vercel deploy --prod` with `HELIUS_API_KEY` set.
+  - The app runs in *serverless mode*: ingestion runs while the function instance is alive (open dashboards and SSE streams keep it warm).
+  - Every API call first catches up from the last indexed slot. A cold start replays the last ~800 transactions in about 3 s.
+  - SSE streams are recycled every 270 s and resume losslessly via `Last-Event-ID`. WebSocket `/ws` is not available on Vercel.
+- **Long-running hosts** (Render, Railway, Fly, a VPS): `Dockerfile` and `render.yaml` are included. This mode gives continuous ingestion and adds the WebSocket endpoint.
 
 ## License
 
