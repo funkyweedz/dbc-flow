@@ -26,6 +26,10 @@ export const config = {
   // ou 'single' (logsSubscribe + getTransaction, RPC standard, couverture limitée par le budget).
   ingestMode: process.env.INGEST_MODE || 'batch',
   pollMs: num(process.env.POLL_MS, 2000),
+  // Serverless (Vercel) : pas de process permanent → ingestion à la demande + rattrapage.
+  serverless: !!process.env.VERCEL || process.env.SERVERLESS === 'true',
+  // Pages de 100 tx chargées au démarrage à froid (historique initial).
+  warmPages: num(process.env.WARM_PAGES, 8),
 };
 
 export const DBC_PROGRAM_ID = 'dbcij3LWUppWqq96dh6gJWwBifmcGfLSB5D4DuSMaqN';

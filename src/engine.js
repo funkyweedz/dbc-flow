@@ -122,39 +122,88 @@ async function processTx(tx, sig) {
 // ---------- Mode batch : getTransactionsForAddress (Helius) ----------
 // Une requête = jusqu'à 100 transactions complètes, triées par slot croissant.
 let lastSlot = 0;
-async function pollBatch() {
-  let pages = 0;
+let lastPollAt = 0;
+
+async function ingestBatch(data) {
+  // 1) décodage de tout le batch, 2) préchargement parallèle des comptes/métadonnées
+  //    de tous les pools touchés (quelques appels groupés), 3) application dans l'ordre.
+  const decoded = [];
+  for (const tx of data) {
+    const sig = tx.transaction.signatures[0];
+    if (!remember(sig)) continue;
+    stats.seen++; stats.seenWindow.push(Date.now());
+    stats.processed++; stats.processedWindow.push(Date.now());
+    try { decoded.push({ slot: tx.slot, events: decodeTransaction(tx, sig) }); } catch { stats.failed++; }
+  }
+  const touched = new Map();
+  for (const d of decoded) for (const ev of d.events) if (ev.pool) touched.set(ev.pool, ev.config);
+  await Promise.all([...touched].map(([pool, cfg]) => context(pool, cfg).catch(() => null)));
+  for (const d of decoded) {
+    for (const ev of d.events) {
+      try { await handle(ev); } catch (e) { console.warn('[handle]', ev.type, e.message); }
+    }
+    if (d.slot > lastSlot) lastSlot = d.slot;
+  }
+}
+
+const batchOpts = () => ({ transactionDetails: 'full', encoding: 'json', maxSupportedTransactionVersion: 1,
+  limit: 100, filters: { status: 'succeeded' } });
+
+async function pollBatch({ maxPages = 5 } = {}) {
+  if (!lastSlot) {
+    // Démarrage à froid : on remonte quelques pages en arrière puis on rejoue dans l'ordre.
+    const pages = [];
+    let token;
+    for (let i = 0; i < Math.max(1, config.warmPages); i++) {
+      const opts = { ...batchOpts(), sortOrder: 'desc' };
+      if (token) opts.paginationToken = token;
+      const r = await rpc('getTransactionsForAddress', [DBC_PROGRAM_ID, opts]);
+      pages.push(...(r?.data ?? []));
+      if (!r?.paginationToken || (r?.data?.length ?? 0) < 100) break;
+      token = r.paginationToken;
+    }
+    await ingestBatch(pages.reverse());
+    lastPollAt = Date.now();
+    return;
+  }
   let token;
-  for (;;) {
-    const opts = { transactionDetails: 'full', encoding: 'json', maxSupportedTransactionVersion: 1,
-      limit: 100, filters: { status: 'succeeded' } };
-    if (lastSlot) { opts.sortOrder = 'asc'; opts.filters.slot = { gte: lastSlot }; }
-    else opts.sortOrder = 'desc'; // premier appel : on démarre sur les 100 dernières
+  for (let page = 0; page < maxPages; page++) {
+    const opts = { ...batchOpts(), sortOrder: 'asc', filters: { status: 'succeeded', slot: { gte: lastSlot } } };
     if (token) opts.paginationToken = token;
     const r = await rpc('getTransactionsForAddress', [DBC_PROGRAM_ID, opts]);
     const data = r?.data ?? [];
-    if (!lastSlot) data.reverse();
-    for (const tx of data) {
-      const sig = tx.transaction.signatures[0];
-      if (!remember(sig)) continue;
-      stats.seen++; stats.seenWindow.push(Date.now());
-      stats.processed++; stats.processedWindow.push(Date.now());
-      await processTx(tx, sig);
-      if (tx.slot > lastSlot) lastSlot = tx.slot;
-    }
-    if (!lastSlot && data.length) lastSlot = data[data.length - 1].slot;
-    pages++;
-    if (data.length < 100 || !r.paginationToken || pages >= 5 || opts.sortOrder === 'desc') break;
+    await ingestBatch(data);
+    if (data.length < 100 || !r.paginationToken) break;
     token = r.paginationToken;
   }
+  lastPollAt = Date.now();
+}
+
+// Un seul poll à la fois : la boucle et le rattrapage à la demande partagent la requête en cours.
+let inflight = null;
+function pollOnce(maxPages) {
+  if (!inflight) {
+    inflight = pollBatch({ maxPages })
+      .catch((e) => { stats.failed++; console.warn('[batch]', e.message); })
+      .finally(() => { inflight = null; });
+  }
+  return inflight;
+}
+
+// Rattrapage à la demande (serverless) : avant de répondre, on s'assure d'être à jour.
+export function ensureFresh() {
+  if (config.ingestMode !== 'batch') return Promise.resolve();
+  if (inflight) return inflight;
+  if (Date.now() - lastPollAt < config.pollMs + 1000) return Promise.resolve();
+  return pollOnce(20);
 }
 
 function startBatchLoop() {
   stats.wsConnected = true; // pas de WS dans ce mode : on reporte l'état du poller
   const tick = async () => {
     const t0 = Date.now();
-    try { await pollBatch(); stats.lastWsMsg = Date.now(); }
-    catch (e) { stats.failed++; console.warn('[batch]', e.message); }
+    await pollOnce(5);
+    stats.lastWsMsg = Date.now();
     setTimeout(tick, Math.max(200, config.pollMs - (Date.now() - t0)));
   };
   tick();
@@ -478,7 +527,13 @@ function restore() {
   console.log(`[persist] état restauré (${poolState.size} pools, ${events.length} events, âge ${Math.round(age / 1000)}s)`);
 }
 
-export async function startEngine({ workers = 6 } = {}) {
+let started = null;
+export function startEngine(opts) {
+  if (!started) started = boot(opts);
+  return started;
+}
+
+async function boot({ workers = 6 } = {}) {
   restore();
   setInterval(snapshot, 30_000);
   await startPriceLoop();

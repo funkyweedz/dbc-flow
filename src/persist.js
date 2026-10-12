@@ -3,7 +3,8 @@
 import { readFileSync, writeFileSync, renameSync, mkdirSync } from 'node:fs';
 import { dirname } from 'node:path';
 
-const FILE = process.env.SNAPSHOT_FILE || new URL('../data/snapshot.json', import.meta.url).pathname;
+const FILE = process.env.SNAPSHOT_FILE
+  || (process.env.VERCEL ? '/tmp/dbc-flow-snapshot.json' : new URL('../data/snapshot.json', import.meta.url).pathname);
 
 const replacer = (_k, v) => {
   if (v instanceof Set) return { $set: [...v] };

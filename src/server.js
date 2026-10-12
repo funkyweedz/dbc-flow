@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import { config } from './config.js';
 import {
-  bus, startEngine, snapshot, poolState, launchpads, traders, serializePool, serializeLaunchpad, recentEvents, getStats, eta,
+  bus, startEngine, snapshot, ensureFresh, poolState, launchpads, traders, serializePool, serializeLaunchpad, recentEvents, getStats, eta,
 } from './engine.js';
 import { sampleCurve } from './curve.js';
 
@@ -13,6 +13,16 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 const app = express();
 app.disable('x-powered-by');
 app.use((req, res, next) => { res.setHeader('Access-Control-Allow-Origin', '*'); next(); });
+
+// Le moteur démarre au premier appel (indispensable en serverless) ; avant chaque réponse API,
+// on rattrape les tx manquées si l'instance a été suspendue.
+app.use(['/api', '/health'], async (req, res, next) => {
+  try {
+    await startEngine();
+    if (req.path !== '/stream') await ensureFresh();
+  } catch (e) { console.warn('[engine]', e.message); }
+  next();
+});
 
 const EVENT_TYPES = ['swap', 'pool_created', 'graduated', 'migrated', 'near_graduation', 'whale', 'sniper'];
 const parseTypes = (q) => (q ? new Set(String(q).split(',').map((s) => s.trim()).filter(Boolean)) : null);
@@ -102,7 +112,10 @@ app.get('/api/stream', (req, res) => {
   bus.on('event', onEvent);
   bus.on('stats', onStats);
   const ping = setInterval(() => res.write(': ping\n\n'), 20_000);
-  req.on('close', () => { clearInterval(ping); bus.off('event', onEvent); bus.off('stats', onStats); });
+  // Serverless : on ferme proprement avant le maxDuration de la fonction ; EventSource se
+  // reconnecte tout seul et Last-Event-ID rejoue ce qui a été manqué.
+  const cap = config.serverless ? setTimeout(() => res.end(), 270_000) : null;
+  req.on('close', () => { clearInterval(ping); clearTimeout(cap); bus.off('event', onEvent); bus.off('stats', onStats); });
 });
 
 app.get('/api/schema', (_req, res) => res.json({ eventTypes: EVENT_TYPES, sorts: Object.keys(SORTS) }));
@@ -136,12 +149,17 @@ wss.on('connection', (sock) => {
   sock.send(JSON.stringify({ type: 'hello', eventTypes: EVENT_TYPES }));
 });
 
-server.listen(config.port, () => {
-  console.log(`\n☄️  DBC Flow → http://localhost:${config.port}`);
-  console.log(`   Helius: ${config.heliusApiKey ? 'OK' : 'ABSENTE (HELIUS_API_KEY)'} · budget ${config.rps} req/s`);
-  startEngine().catch((e) => { console.error('[engine] démarrage KO', e); process.exit(1); });
-});
+export default app;
 
-for (const sig of ['SIGINT', 'SIGTERM']) {
-  process.on(sig, () => { console.log('\n[shutdown] snapshot…'); snapshot(); process.exit(0); });
+// En local / sur un hôte classique : serveur HTTP + WebSocket + ingestion continue.
+// Sur Vercel : seul `app` est exporté (api/index.js), le WebSocket n'est pas disponible.
+if (!config.serverless) {
+  server.listen(config.port, () => {
+    console.log(`\n☄️  DBC Flow → http://localhost:${config.port}`);
+    console.log(`   Helius: ${config.heliusApiKey ? 'OK' : 'ABSENTE (HELIUS_API_KEY)'} · budget ${config.rps} req/s`);
+    startEngine().catch((e) => { console.error('[engine] démarrage KO', e); process.exit(1); });
+  });
+  for (const sig of ['SIGINT', 'SIGTERM']) {
+    process.on(sig, () => { console.log('\n[shutdown] snapshot…'); snapshot(); process.exit(0); });
+  }
 }

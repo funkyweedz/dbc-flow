@@ -160,7 +160,7 @@ export function startAccountLoop() {
     } catch (e) {
       console.warn('[accounts]', e.message);
     }
-    setTimeout(tick, 400);
+    setTimeout(tick, pending.pools.size || pending.configs.size || pending.tokens.size ? 30 : 150);
   };
   tick();
 }
