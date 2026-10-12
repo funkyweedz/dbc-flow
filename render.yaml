@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: dbc-flow
+    runtime: node
+    plan: starter
+    buildCommand: npm ci --omit=dev
+    startCommand: node src/server.js
+    healthCheckPath: /health
+    envVars:
+      - key: HELIUS_API_KEY
+        sync: false
+      - key: INGEST_MODE
+        value: batch

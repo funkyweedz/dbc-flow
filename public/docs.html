@@ -1,0 +1,114 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DBC Flow — API &amp; SDK</title>
+  <meta name="description" content="Plug-and-play data streams for Meteora DBC launchpads and trading terminals: SSE, WebSocket, REST, TypeScript client and MCP server." />
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>☄️</text></svg>" />
+</head>
+<body>
+  <header class="top">
+    <div class="brand"><span class="logo">☄️</span><div><h1>DBC Flow</h1><p class="tag">Live data streams for Meteora Dynamic Bonding Curve</p></div></div>
+    <div class="pills"></div>
+    <nav class="nav"><a href="/">Dashboard</a><a href="/docs" class="active">API &amp; SDK</a></nav>
+  </header>
+
+  <div class="docs">
+    <div class="hero">
+      <h1>Plug-and-play DBC data for launchpads, terminals &amp; agents</h1>
+      <p>DBC Flow indexes <b>every</b> Meteora Dynamic Bonding Curve transaction on Solana mainnet in real time, decodes the program's
+        <code>emit_cpi</code> events (<code>EvtSwap2</code>, <code>EvtInitializePool</code>, <code>EvtCurveComplete</code>, <code>migration_damm_v2</code>…),
+        enriches them (token metadata, USD prices, market cap, curve progress) and serves them over <b>SSE</b>, <b>WebSocket</b>, <b>REST</b>,
+        a zero-dependency <b>TypeScript client</b> and an <b>MCP server</b> for AI agents.</p>
+      <div class="try">
+        <a href="/api/pools?status=bonding&sort=progress&limit=10" target="_blank">/api/pools?sort=progress</a>
+        <a href="/api/launchpads" target="_blank">/api/launchpads</a>
+        <a href="/api/events?types=pool_created,graduated,migrated" target="_blank">/api/events</a>
+        <a href="/api/stats" target="_blank">/api/stats</a>
+      </div>
+    </div>
+
+    <h2>Why</h2>
+    <p>Every team building on DBC re-implements the same plumbing: subscribe to the program, fetch transactions, decode Anchor CPI events,
+      resolve configs and token metadata, compute bonding progress, detect graduations and migrations to DAMM v2. DBC Flow does it once,
+      and exposes signals that are not directly on-chain:</p>
+    <ul>
+      <li><b>Graduation progress &amp; ETA</b> — quote reserve vs. <code>migration_quote_threshold</code> on every swap, ETA from a 10-minute linear regression of progress.</li>
+      <li><b>Lifecycle stream</b> — <code>pool_created → near_graduation → graduated → migrated (DAMM v2 pool address)</code>.</li>
+      <li><b>Flow signals</b> — 5m/1h volume, net buy flow, unique traders, <b>sniper</b> buys (within N s of launch), <b>whale</b> buys, <b>dev</b> buys/sells.</li>
+      <li><b>Launchpad analytics</b> — every DBC config aggregated: launches, graduations, volume, fees.</li>
+      <li><b>Curve explorer</b> — any config's liquidity curve sampled with the official SDK math (price vs. quote raised).</li>
+      <li><b>Ticker spoof detection</b> — symbols hiding bidi / zero-width characters (e.g. U+202E) are cleaned and flagged.</li>
+    </ul>
+
+    <h2>Streaming</h2>
+    <h3>Server-Sent Events</h3>
+    <p><span class="ep">GET /api/stream?types=…&amp;pool=…</span> — filters are optional and comma-separated. Supports <code>Last-Event-ID</code> for gap-free reconnects.</p>
+<pre class="snip">const es = new EventSource('/api/stream?types=graduated,migrated,whale');
+es.addEventListener('graduated', (m) => console.log(JSON.parse(m.data)));
+es.addEventListener('swap', (m) => console.log('whale', JSON.parse(m.data)));</pre>
+
+    <h3>WebSocket</h3>
+    <p><span class="ep">WS /ws</span> — send a subscription, receive JSON events.</p>
+<pre class="snip">const ws = new WebSocket('wss://your-host/ws');
+ws.onopen = () => ws.send(JSON.stringify({ op: 'subscribe', types: ['pool_created', 'near_graduation'], pools: [] }));
+ws.onmessage = (m) => console.log(JSON.parse(m.data));</pre>
+
+    <h3>Event types</h3>
+    <table>
+      <thead><tr><th>type</th><th>When</th><th>Key fields</th></tr></thead>
+      <tbody>
+        <tr><td><code>swap</code></td><td>Every buy/sell on a DBC curve</td><td>side, trader, baseAmount, quoteAmount, usd, priceUsd, mcapUsd, progress, flags[whale|sniper|dev]</td></tr>
+        <tr><td><code>pool_created</code></td><td><code>EvtInitializePool</code></td><td>pool, mint, creator, config, migrationTarget</td></tr>
+        <tr><td><code>near_graduation</code></td><td>Progress first crosses <code>NEAR_GRAD_PCT</code> (80%)</td><td>progress, etaSec, mcapUsd</td></tr>
+        <tr><td><code>graduated</code></td><td><code>EvtCurveComplete</code></td><td>quoteReserve, timeToGraduateSec, mcapUsd</td></tr>
+        <tr><td><code>migrated</code></td><td><code>migration_damm_v2</code> / <code>migrate_meteora_damm</code></td><td>dammPool, target</td></tr>
+      </tbody>
+    </table>
+    <p><code>whale</code> and <code>sniper</code> can also be used as stream filters (they match flagged swaps).</p>
+
+    <h2>REST</h2>
+    <table>
+      <thead><tr><th>Endpoint</th><th>Description</th></tr></thead>
+      <tbody>
+        <tr><td class="ep">GET /api/pools</td><td><code>sort</code> = progress | volume5m | volume1h | new | mcap | eta | netflow5m | recent · <code>status</code> = bonding | graduated | migrated · <code>minProgress</code> · <code>quote</code> (SOL, USDC…) · <code>config</code> · <code>limit</code></td></tr>
+        <tr><td class="ep">GET /api/pools/:pool</td><td>Full pool stats + progress history + latest 100 events</td></tr>
+        <tr><td class="ep">GET /api/launchpads</td><td>DBC configs leaderboard · <code>sort</code> = volumeUsd | created | graduated | trades | pools | feesUsd</td></tr>
+        <tr><td class="ep">GET /api/curve/:config</td><td>Sampled liquidity curve + fee/migration parameters of a config</td></tr>
+        <tr><td class="ep">GET /api/traders</td><td>Most active wallets · <code>sort</code> = volumeUsd | snipes | buys</td></tr>
+        <tr><td class="ep">GET /api/events</td><td>Replay buffer · <code>types</code>, <code>pool</code>, <code>since</code> (event id), <code>limit</code></td></tr>
+        <tr><td class="ep">GET /api/stats</td><td>Indexer health: tx/min, coverage %, queue, RPC usage</td></tr>
+      </tbody>
+    </table>
+
+    <h2>TypeScript client</h2>
+    <p><code>packages/client</code> — zero dependencies, works in browsers and Node ≥ 18 (SSE parsed over <code>fetch</code>, auto-reconnect with resume).</p>
+<pre class="snip">import { DbcFlow } from 'dbc-flow-client';
+const flow = new DbcFlow({ baseUrl: 'https://your-dbc-flow.app' });
+
+const near = await flow.nearGraduation(85);          // pools ≥ 85% of their curve
+const lps  = await flow.launchpads({ sort: 'graduated' });
+const curve = await flow.curve(near[0].config);        // price vs. quote raised
+
+for await (const ev of flow.stream({ types: ['graduated', 'migrated'] })) {
+  console.log(ev.symbol, ev.type, ev.dammPool ?? '');
+}
+
+const stop = flow.on('whale', (ev) => console.log('🐋', ev.symbol, ev.usd));</pre>
+
+    <h2>MCP server (AI agents)</h2>
+    <p><code>packages/mcp</code> exposes 6 tools — <code>dbc_near_graduation</code>, <code>dbc_hot_pools</code>, <code>dbc_pool</code>, <code>dbc_launchpads</code>, <code>dbc_curve</code>, <code>dbc_recent_events</code> — so an agent can answer “which DBC launches are about to graduate and who is sniping them?”.</p>
+<pre class="snip">claude mcp add dbc-flow -e DBC_FLOW_URL=https://your-dbc-flow.app -- node packages/mcp/index.js</pre>
+
+    <h2>Self-host</h2>
+<pre class="snip">git clone &lt;repo&gt; && cd dbc-flow && npm i
+echo "HELIUS_API_KEY=..." > .env
+npm start            # http://localhost:4100</pre>
+    <p>Ingestion modes: <code>INGEST_MODE=batch</code> (default — Helius <code>getTransactionsForAddress</code>, up to 100 full transactions per call, ~100% coverage, ordered processing)
+      or <code>INGEST_MODE=single</code> (any Solana RPC: <code>logsSubscribe</code> + rate-limited <code>getTransaction</code> with a priority queue that never drops launches / migrations).</p>
+  </div>
+  <footer class="foot">DBC Flow · built on Meteora DBC &amp; DAMM v2</footer>
+</body>
+</html>

@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>DBC Flow — live Meteora DBC data streams</title>
+  <meta name="description" content="Real-time data streams and developer tooling for Meteora Dynamic Bonding Curve launches: graduation radar, live tape, launchpad leaderboard, curve explorer, SSE/WebSocket/REST API." />
+  <link rel="stylesheet" href="/styles.css" />
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>☄️</text></svg>" />
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <span class="logo">☄️</span>
+      <div>
+        <h1>DBC Flow</h1>
+        <p class="tag">Live data streams for Meteora Dynamic Bonding Curve</p>
+      </div>
+    </div>
+    <div class="pills" id="pills">
+      <span class="pill" id="p-live"><i class="dot"></i>connecting…</span>
+    </div>
+    <nav class="nav">
+      <a href="/" class="active">Dashboard</a>
+      <a href="/docs">API &amp; SDK</a>
+      <a href="https://github.com/" id="gh-link" target="_blank" rel="noopener">GitHub</a>
+    </nav>
+  </header>
+
+  <main class="grid">
+    <section class="card radar">
+      <div class="card-h">
+        <h2>Graduation radar</h2>
+        <div class="tabs" id="radar-tabs">
+          <button data-tab="near" class="on">Near grad</button>
+          <button data-tab="hot">Hot 5m</button>
+          <button data-tab="new">New</button>
+          <button data-tab="grad">Graduated</button>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table class="pools">
+          <thead><tr><th>Token</th><th class="w-prog">Bonding</th><th>ETA</th><th class="r">MCap</th><th class="r">Vol 5m</th><th class="r">Net 5m</th></tr></thead>
+          <tbody id="radar-body"><tr><td colspan="6" class="empty">Waiting for on-chain data…</td></tr></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card tape">
+      <div class="card-h">
+        <h2>Live tape</h2>
+        <div class="chips" id="tape-filters">
+          <button data-f="all" class="on">All</button>
+          <button data-f="buy">Buys</button>
+          <button data-f="sell">Sells</button>
+          <button data-f="whale">🐋 Whales</button>
+          <button data-f="sniper">🎯 Snipers</button>
+          <button data-f="lifecycle">🚀 Launch / Grad</button>
+        </div>
+      </div>
+      <ul id="tape" class="tape-list"></ul>
+    </section>
+
+    <section class="card lifecycle">
+      <div class="card-h"><h2>Lifecycle events</h2><span class="sub">launch → near grad → curve complete → DAMM v2</span></div>
+      <ul id="life" class="life-list"><li class="empty">No lifecycle events yet</li></ul>
+    </section>
+
+    <section class="card pads">
+      <div class="card-h"><h2>Launchpad leaderboard</h2><span class="sub">by DBC config</span></div>
+      <div class="table-wrap">
+        <table class="mini">
+          <thead><tr><th>Config</th><th class="r">Pools</th><th class="r">Launches</th><th class="r">Grads</th><th class="r">Volume</th><th class="r">Fees</th></tr></thead>
+          <tbody id="pads-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="card traders">
+      <div class="card-h"><h2>Most active wallets</h2>
+        <div class="tabs" id="trader-tabs"><button data-s="volumeUsd" class="on">Volume</button><button data-s="snipes">Snipes</button></div>
+      </div>
+      <div class="table-wrap">
+        <table class="mini">
+          <thead><tr><th>Wallet</th><th class="r">Buys</th><th class="r">Sells</th><th class="r">Pools</th><th class="r">Snipes</th><th class="r">Volume</th></tr></thead>
+          <tbody id="traders-body"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <!-- Pool drawer -->
+  <aside id="drawer" class="drawer" hidden>
+    <div class="drawer-in">
+      <button class="close" id="drawer-close" aria-label="Close">✕</button>
+      <div id="drawer-body"></div>
+    </div>
+  </aside>
+
+  <footer class="foot">
+    Built on <a href="https://docs.meteora.ag/developer-guides/dbc" target="_blank" rel="noopener">Meteora DBC</a> + DAMM v2 · data decoded from on-chain <code>emit_cpi</code> events · <span id="foot-stats"></span>
+  </footer>
+
+  <script src="/app.js" type="module"></script>
+</body>
+</html>

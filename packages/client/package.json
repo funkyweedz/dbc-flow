@@ -1,0 +1,13 @@
+{
+  "name": "dbc-flow-client",
+  "version": "0.1.0",
+  "description": "Tiny zero-dependency client for DBC Flow — live Meteora Dynamic Bonding Curve data streams (SSE + REST).",
+  "type": "module",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "exports": { ".": { "types": "./index.d.ts", "default": "./index.js" } },
+  "files": ["index.js", "index.d.ts", "README.md"],
+  "keywords": ["solana", "meteora", "dbc", "bonding-curve", "launchpad", "sse", "trading"],
+  "license": "MIT",
+  "engines": { "node": ">=18" }
+}
