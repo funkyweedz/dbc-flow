@@ -4,7 +4,7 @@
 
 DBC Flow indexes every DBC transaction on Solana mainnet, decodes the program's `emit_cpi` events, enriches them and serves them as plug-and-play streams for launchpads, trading terminals, bots and AI agents.
 
-**🔴 Live: https://dbc-flow.vercel.app** · API docs: https://dbc-flow.vercel.app/docs
+**🔴 Live: https://dbc-flow.vercel.app** · API docs: https://dbc-flow.vercel.app/docs · 🎬 Demo: https://dbc-flow.vercel.app/demo
 
 > Built for the Superteam Earn bounty *“Best use of Meteora's Dynamic Bonding Curve”*, track **Data Streams or Developer Tooling for trading terminals and builders**.
 
