@@ -5,3 +5,6 @@ data/
 packages/*/node_modules
 .vercel
 .env*
+media/
+SUBMISSION.md
+.env.local
