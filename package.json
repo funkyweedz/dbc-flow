@@ -22,5 +22,8 @@
   "type": "module",
   "engines": {
     "node": "22.x"
+  },
+  "overrides": {
+    "rpc-websockets": "9.0.4"
   }
 }
